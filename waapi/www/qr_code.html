@@ -1,0 +1,140 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<div class="container" style="max-width: 500px; margin: 30px auto;">
+    <div class="card">
+        <div class="card-header" style="background: #25D366; color: white;">
+            <h4 class="text-center">WhatsApp Authentication</h4>
+            <div class="text-center small">
+                Status: <span id="status-text">Loading...</span>
+                | Refresh in: <span id="countdown">30</span>s
+            </div>
+        </div>
+        
+        <div class="card-body text-center">
+            <div id="status-message" class="alert alert-info">
+                <i class="fa fa-spinner fa-spin"></i> Initializing...
+            </div>
+            
+            <div id="qr-container" style="display: none; margin: 20px 0;">
+                <img id="qr-image" style="max-width: 100%; border: 1px solid #ddd; padding: 10px;">
+                <p class="text-muted small mt-2">Scan with WhatsApp mobile app</p>
+            </div>
+            
+            <div class="mt-3">
+                <button id="refresh-btn" class="btn btn-primary">
+                    <i class="fa fa-refresh"></i> Refresh Now
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+frappe.ready(function() {
+    const instance_id = "76432";
+    const POLL_INTERVAL = 30000; // 30 seconds
+    let pollingInterval = null;
+    let countdownInterval = null;
+    
+    // Elements
+    const statusEl = document.getElementById("status-message");
+    const qrContainer = document.getElementById("qr-container");
+    const qrImg = document.getElementById("qr-image");
+    const refreshBtn = document.getElementById("refresh-btn");
+    const statusText = document.getElementById("status-text");
+    const countdownEl = document.getElementById("countdown");
+    
+    // Start polling for connection status
+    startPolling();
+    
+    // Start countdown timer
+    function startCountdown() {
+        let seconds = POLL_INTERVAL / 1000;
+        countdownEl.textContent = seconds;
+        
+        clearInterval(countdownInterval);
+        countdownInterval = setInterval(() => {
+            seconds--;
+            countdownEl.textContent = seconds;
+            if (seconds <= 0) seconds = POLL_INTERVAL / 1000;
+        }, 1000);
+    }
+    
+    // Check connection status
+    function checkConnection() {
+        frappe.call({
+            method: 'waapi.api.waapi.check_connection_status',
+            args: { instance_id: instance_id },
+            callback: function(response) {
+                if (response && response.message && response.message.connected) {
+                    // Successful connection - redirect
+                    window.location.href = "/whatsapp_user_details";
+                }
+            }
+        });
+    }
+    
+    // Fetch QR code
+    function fetchQRCode() {
+        updateStatus("Loading QR code...", "info");
+        
+        frappe.call({
+            method: 'waapi.api.waapi.get_qr_code',
+            args: { instance_id: instance_id },
+            callback: function(response) {
+                if (!response || response.exc) {
+                    updateStatus("Server error", "error");
+                    return;
+                }
+                
+                if (response.message.error || !response.message.success) {
+                    updateStatus(response.message.error || "QR code error", "error");
+                    return;
+                }
+                
+                // Display QR code
+                qrImg.src = response.message.qr_code;
+                qrContainer.style.display = "block";
+                updateStatus("Scan QR code to connect", "info");
+                statusText.textContent = "Waiting for scan...";
+                
+                // Check connection status periodically
+                startCountdown();
+                if (!pollingInterval) {
+                    pollingInterval = setInterval(checkConnection, 2000); // Check every 2 seconds
+                }
+            }
+        });
+    }
+    
+    // Start polling
+    function startPolling() {
+        fetchQRCode(); // Initial fetch
+        setInterval(fetchQRCode, POLL_INTERVAL); // Refresh QR code periodically
+    }
+    
+    // Update status display
+    function updateStatus(message, type="info") {
+        const icons = {
+            info: "fa-spinner fa-spin",
+            success: "fa-check-circle",
+            error: "fa-exclamation-circle"
+        };
+        statusEl.innerHTML = `<i class="fa ${icons[type]}"></i> ${message}`;
+        statusEl.className = `alert alert-${type}`;
+    }
+    
+    // Refresh button handler
+    refreshBtn.addEventListener("click", function() {
+        fetchQRCode();
+    });
+    
+    // Clean up on page leave
+    window.addEventListener("beforeunload", function() {
+        clearInterval(pollingInterval);
+        clearInterval(countdownInterval);
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,709 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<div class="whatsapp-user-wrapper">
+    <div class="whatsapp-user-card">
+        {% if user_data %}
+        <!-- Success State -->
+        <div class="user-header">
+            <div class="status-indicator success">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            <h1>Connection Successful</h1>
+            <p class="subtitle">WhatsApp account linked securely</p>
+        </div>
+        
+        <div class="user-content">
+            <div class="user-avatar-section">
+                <div class="avatar-container">
+                    <img src="{{ user_data.profile_pic }}" 
+                         alt="Profile Picture"
+                         class="user-avatar"
+                         onerror="this.src='/assets/frappe/images/default-avatar.png'">
+                    <div class="avatar-status">
+                        <i class="fas fa-check"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="user-details">
+                <div class="detail-item primary">
+                    <div class="detail-icon">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div class="detail-content">
+                        <span class="detail-label">Display Name</span>
+                        <span class="detail-value">{{ user_data.display_name }}</span>
+                    </div>
+                </div>
+                
+                <div class="detail-item">
+                    <div class="detail-icon">
+                        <i class="fas fa-phone"></i>
+                    </div>
+                    <div class="detail-content">
+                        <span class="detail-label">Phone Number</span>
+                        <span class="detail-value">{{ user_data.phone_number }}</span>
+                    </div>
+                </div>
+                
+                <div class="detail-item">
+                    <div class="detail-icon">
+                        <i class="fas fa-id-card"></i>
+                    </div>
+                    <div class="detail-content">
+                        <span class="detail-label">Contact ID</span>
+                        <span class="detail-value">{{ user_data.contact_id }}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="connection-status">
+                <div class="status-badge success">
+                    <i class="fas fa-shield-check"></i>
+                    <span>Securely Connected</span>
+                </div>
+                <div class="connection-time">
+                    <i class="fas fa-clock"></i>
+                    <span>Connected just now</span>
+                </div>
+            </div>
+        </div>
+        
+        {% else %}
+        <!-- Error State -->
+        <div class="user-header error">
+            <div class="status-indicator error">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h1>Connection Failed</h1>
+            <p class="subtitle">Unable to retrieve user data</p>
+        </div>
+        
+        <div class="user-content">
+            <div class="error-message">
+                <div class="error-icon">
+                    <i class="fas fa-wifi"></i>
+                </div>
+                <p class="error-text">{{ error or _("No user data found. Please try connecting again.") }}</p>
+            </div>
+        </div>
+        {% endif %}
+        
+        <div class="user-actions">
+            <button id="back-btn" class="action-btn secondary">
+                <i class="fas fa-arrow-left"></i>
+                <span>Back to Login</span>
+            </button>
+            {% if user_data %}
+            <button id="continue-btn" class="action-btn primary">
+                <span>Message</span>
+                <i class="fas fa-arrow-right"></i>
+            </button>
+            <button id="logout-btn" class="btn btn-danger mr-2">
+            <i class="fa fa-sign-out"></i> Logout
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+frappe.ready(function() {
+    // Try to get user data from localStorage if not in template context
+    if (!{{ user_data | tojson | default('{}') }}) {
+        const storedData = localStorage.getItem('whatsapp_user_data');
+        if (storedData) {
+            try {
+                const userData = JSON.parse(storedData);
+                
+                // Update the page with stored data
+                document.querySelector('.user-avatar').src = userData.profile_pic;
+                document.querySelectorAll('.detail-value')[0].textContent = userData.display_name;
+                document.querySelectorAll('.detail-value')[1].textContent = userData.phone_number;
+                document.querySelectorAll('.detail-value')[2].textContent = userData.contact_id;
+                
+                // Show success state
+                document.querySelector('.user-header.error').style.display = 'none';
+                document.querySelector('.error-message').style.display = 'none';
+                
+                // Clean up
+                localStorage.removeItem('whatsapp_user_data');
+            } catch (e) {
+                console.error('Error parsing stored user data:', e);
+            }
+        }
+    }
+    
+    // Back button functionality
+    document.getElementById('back-btn').addEventListener('click', function() {
+        this.classList.add('loading');
+        setTimeout(() => {
+            window.location.href = "/whatsapp_login_button";
+        }, 300);
+    });
+    
+    
+    // Continue button functionality
+    const continueBtn = document.getElementById('continue-btn');
+    if (continueBtn) {
+        continueBtn.addEventListener('click', function() {
+            this.classList.add('loading');
+            setTimeout(() => {
+                window.location.href = "/whatsapp_messenger";
+            }, 300);
+        });
+    }
+});
+
+
+// Logout button functionality
+frappe.ready(function() {
+    const logoutBtn = document.getElementById('logout-btn');
+    
+    logoutBtn.addEventListener('click', function() {
+        frappe.confirm(
+            'Are you sure you want to logout from WhatsApp?',
+            function() {
+                // User confirmed logout
+                frappe.call({
+                    method: 'waapi.api.waapi.logout_client',
+                    args: {},
+                    callback: function(response) {
+                        if (response.message.success) {
+                            frappe.msgprint({
+                                title: __('Success'),
+                                indicator: 'green',
+                                message: __('Successfully logged out from WhatsApp')
+                            });
+                            setTimeout(() => {
+                                window.location.href = "/whatsapp_login_button";
+                            }, 1500);
+                        } else {
+                            frappe.msgprint({
+                                title: __('Error'),
+                                indicator: 'red',
+                                message: __('Logout failed: ') + response.message.message
+                            });
+                        }
+                    },
+                    error: function(err) {
+                        console.error("Logout Error:", err);
+                        frappe.msgprint({
+                            title: __('Error'),
+                            indicator: 'red',
+                            message: __('Failed to logout')
+                        });
+                    }
+                });
+            },
+            function() {
+                // User cancelled
+                console.log("Logout cancelled");
+            }
+        );
+    });
+});
+
+</script>
+
+<style>
+/* Reset and base styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+.whatsapp-user-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+    background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.whatsapp-user-card {
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 
+        0 4px 6px -1px rgba(0, 0, 0, 0.1),
+        0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    width: 100%;
+    max-width: 420px;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    animation: slideUp 0.6s ease-out;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.whatsapp-user-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 
+        0 10px 15px -3px rgba(0, 0, 0, 0.1),
+        0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* Header Styles */
+.user-header {
+    background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+    color: white;
+    padding: 24px 20px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.user-header.error {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+.user-header::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20px;
+    width: 100px;
+    height: 200%;
+    background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+    transform: rotate(15deg);
+    animation: shimmer 3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+    0%, 100% { opacity: 0; transform: translateX(-100px) rotate(15deg); }
+    50% { opacity: 1; transform: translateX(0) rotate(15deg); }
+}
+
+.status-indicator {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    font-size: 20px;
+    position: relative;
+    z-index: 2;
+}
+
+.status-indicator.success {
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.status-indicator.error {
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.user-header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    position: relative;
+    z-index: 2;
+    letter-spacing: -0.025em;
+}
+
+.subtitle {
+    font-size: 14px;
+    opacity: 0.9;
+    font-weight: 400;
+    position: relative;
+    z-index: 2;
+}
+
+/* Content Styles */
+.user-content {
+    padding: 24px 20px;
+}
+
+.user-avatar-section {
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+.avatar-container {
+    position: relative;
+    display: inline-block;
+}
+
+.user-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    border: 3px solid #e2e8f0;
+    object-fit: cover;
+    transition: all 0.3s ease;
+}
+
+.user-avatar:hover {
+    transform: scale(1.05);
+    border-color: #25D366;
+}
+
+.avatar-status {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    width: 24px;
+    height: 24px;
+    background: #25D366;
+    border-radius: 50%;
+    border: 2px solid white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 10px;
+}
+
+/* Detail Items */
+.user-details {
+    space-y: 12px;
+    margin-bottom: 20px;
+}
+
+.detail-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    transition: all 0.2s ease;
+    margin-bottom: 8px;
+}
+
+.detail-item:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    transform: translateX(2px);
+}
+
+.detail-item.primary {
+    background: linear-gradient(135deg, #25D366, #128C7E);
+    color: white;
+    border-color: transparent;
+}
+
+.detail-item.primary:hover {
+    background: linear-gradient(135deg, #22c55e, #16a085);
+}
+
+.detail-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.detail-item:not(.primary) .detail-icon {
+    background: #e2e8f0;
+    color: #64748b;
+}
+
+.detail-item.primary .detail-icon {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.detail-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.detail-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    opacity: 0.7;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.detail-value {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    word-break: break-word;
+}
+
+/* Connection Status */
+.connection-status {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    gap: 12px;
+}
+
+.status-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    flex: 1;
+}
+
+.status-badge.success {
+    background: #dcfce7;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+}
+
+.connection-time {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #64748b;
+}
+
+/* Error State */
+.error-message {
+    text-align: center;
+    padding: 20px;
+}
+
+.error-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #fee2e2;
+    color: #dc2626;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    font-size: 20px;
+}
+
+.error-text {
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* Action Buttons */
+.user-actions {
+    padding: 0 20px 20px;
+    display: flex;
+    gap: 12px;
+}
+
+.action-btn {
+    flex: 1;
+    height: 44px;
+    border: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.action-btn.primary {
+    background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+    color: white;
+    box-shadow: 0 2px 8px rgba(37, 211, 102, 0.25);
+}
+
+.action-btn.secondary {
+    background: #f8fafc;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+}
+
+.action-btn:hover {
+    transform: translateY(-1px);
+}
+
+.action-btn.primary:hover {
+    box-shadow: 0 4px 12px rgba(37, 211, 102, 0.35);
+}
+
+.action-btn.secondary:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #475569;
+}
+
+.action-btn.loading {
+    pointer-events: none;
+    opacity: 0.8;
+}
+
+.action-btn.loading i {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Responsive Design */
+@media (max-width: 480px) {
+    .whatsapp-user-wrapper {
+        padding: 16px;
+    }
+    
+    .whatsapp-user-card {
+        max-width: 100%;
+    }
+    
+    .user-header {
+        padding: 20px 16px;
+    }
+    
+    .user-content {
+        padding: 20px 16px;
+    }
+
+    .user-header h1 {
+        font-size: 18px;
+    }
+
+    .subtitle {
+        font-size: 13px;
+    }
+
+    .user-avatar {
+        width: 70px;
+        height: 70px;
+    }
+
+    .detail-item {
+        padding: 10px;
+    }
+
+    .detail-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 12px;
+    }
+
+    .connection-status {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .user-actions {
+        padding: 0 16px 16px;
+        flex-direction: column;
+    }
+
+    .action-btn {
+        height: 42px;
+        font-size: 13px;
+    }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .whatsapp-user-wrapper {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    }
+
+    .whatsapp-user-card {
+        background: #1e293b;
+        border-color: #334155;
+    }
+
+    .detail-item:not(.primary) {
+        background: #334155;
+        border-color: #475569;
+        color: #e2e8f0;
+    }
+
+    .detail-item:not(.primary):hover {
+        background: #475569;
+        border-color: #64748b;
+    }
+
+    .detail-item:not(.primary) .detail-icon {
+        background: #475569;
+        color: #cbd5e1;
+    }
+
+    .action-btn.secondary {
+        background: #334155;
+        border-color: #475569;
+        color: #cbd5e1;
+    }
+
+    .action-btn.secondary:hover {
+        background: #475569;
+        border-color: #64748b;
+        color: #e2e8f0;
+    }
+
+    .status-badge.success {
+        background: rgba(34, 197, 94, 0.2);
+        color: #4ade80;
+        border-color: rgba(34, 197, 94, 0.3);
+    }
+
+    .connection-time {
+        color: #94a3b8;
+    }
+
+    .error-text {
+        color: #94a3b8;
+    }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+    .whatsapp-user-card {
+        border: 2px solid #25D366;
+    }
+    
+    .detail-item {
+        border: 2px solid #e2e8f0;
+    }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+
+</style>
+{% endblock %}

@@ -1,0 +1,586 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<div class="container-fluid whatsapp-container">
+    <div class="row h-100">
+        <!-- Sidebar with contacts/chats -->
+        <div class="col-md-3 border-right chat-sidebar">
+            <div class="d-flex justify-content-between align-items-center p-3 border-bottom">
+                <h5>WhatsApp Chats</h5>
+                <button class="btn btn-sm btn-primary" id="refresh-chats">
+                    <i class="fa fa-refresh"></i>
+                </button>
+            </div>
+            <div id="chat-list">
+                <div class="text-center p-3 text-muted">
+                    <i class="fa fa-spinner fa-spin"></i> 
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main chat area -->
+        <div class="col-md-9 d-flex flex-column chat-main">
+            <div class="border-bottom p-3 chat-header">
+                <h5 id="current-chat-name">Select a chat</h5>
+                <div id="chat-actions" style="display: none;">
+                    <button class="btn btn-sm btn-outline-secondary" id="chat-info">
+                        <i class="fa fa-info-circle"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Message history -->
+            <div id="message-history" class="flex-grow-1 p-3">
+                <div class="text-center text-muted empty-state">
+                    Select a chat to view messages
+                </div>
+            </div>
+            
+            <!-- Message input -->
+            <div class="border-top p-3" id="message-input-container" style="display: none;">
+                <div class="input-group">
+                    <div class="input-group-prepend">
+                        <button class="btn btn-outline-secondary" type="button" id="attach-media">
+                            <i class="fa fa-paperclip"></i>
+                        </button>
+                    </div>
+                    <textarea class="form-control" id="message-text" 
+                              placeholder="Type a message..." rows="1"></textarea>
+                    <div class="input-group-append">
+                        <button class="btn btn-primary" type="button" id="send-message">
+                            <i class="fa fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="media-preview" class="mt-2" style="display: none;">
+                    <div class="card">
+                        <div class="card-body p-2">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <span id="media-name"></span>
+                                    <small class="text-muted d-block" id="media-size"></small>
+                                </div>
+                                <button class="btn btn-sm btn-link text-danger" id="remove-media">
+                                    <i class="fa fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Media Attachment Modal -->
+<div class="modal fade" id="media-modal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Attach Media</h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span>&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-tabs" id="media-tabs" role="tablist">
+                    <li class="nav-item">
+                        <a class="nav-link active" id="upload-tab" data-toggle="tab" href="#upload">
+                            Upload File
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" id="url-tab" data-toggle="tab" href="#url">
+                            From URL
+                        </a>
+                    </li>
+                </ul>
+                <div class="tab-content p-3">
+                    <div class="tab-pane fade show active" id="upload" role="tabpanel">
+                        <div class="form-group">
+                            <label>Select File</label>
+                            <input type="file" class="form-control-file" id="file-input">
+                        </div>
+                        <div class="form-group">
+                            <label>Caption (optional)</label>
+                            <input type="text" class="form-control" id="media-caption">
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="as-document">
+                            <label class="form-check-label">Send as document</label>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="url" role="tabpanel">
+                        <div class="form-group">
+                            <label>Media URL</label>
+                            <input type="text" class="form-control" id="media-url">
+                        </div>
+                        <div class="form-group">
+                            <label>Caption (optional)</label>
+                            <input type="text" class="form-control" id="url-caption">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="attach-confirm">Attach</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+$(document).ready(function() {
+    let currentChat = null;
+    let selectedMedia = null;
+    
+    // Load chat list with pagination
+    function loadChats(offset = 0, limit = 50) {
+        $('#chat-list').html(`
+            <div class="text-center p-3">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="sr-only">Loading...</span>
+                </div>
+                <p class="mt-2">Loading WhatsApp chats...</p>
+            </div>
+        `);
+
+        frappe.call({
+            method: 'waapi.api.waapi.get_chat_list',
+            args: { offset: offset, limit: limit },
+            callback: function(response) {
+                console.log("Chat list response:", response);
+                
+                if (!response) {
+                    showError("No response from server");
+                    return;
+                }
+                
+                if (response.exc) {
+                    showError("Server error occurred");
+                    return;
+                }
+                
+                if (response.message && response.message.success) {
+                    if (response.message.chats && response.message.chats.length > 0) {
+                        renderChatList(response.message.chats, offset, limit);
+                        
+                        // Add "Load More" button if there might be more chats
+                        if (response.message.has_more) {
+                            $('#chat-list').append(`
+                                <div class="text-center mt-2">
+                                    <button class="btn btn-sm btn-outline-primary" id="load-more-chats"
+                                        data-offset="${offset + limit}" data-limit="${limit}">
+                                        Load More Chats
+                                    </button>
+                                </div>
+                            `);
+                            
+                            $('#load-more-chats').click(function() {
+                                const newOffset = $(this).data('offset');
+                                const newLimit = $(this).data('limit');
+                                loadChats(newOffset, newLimit);
+                            });
+                        }
+                    } else {
+                        $('#chat-list').html(`
+                            <div class="text-center p-3 text-muted">
+                                No chats found. Start a new conversation on your phone.
+                            </div>
+                        `);
+                    }
+                } else {
+                    const errorMsg = response.message?.message || "Failed to load chats";
+                    showError(errorMsg);
+                    
+                    // Show QR code button if not connected
+                    if (response.message?.message?.includes("not connected")) {
+                        $('#chat-list').append(`
+                            <button class="btn btn-primary btn-block mt-2" id="show-qr-btn">
+                                <i class="fa fa-qrcode"></i> Show QR Code
+                            </button>
+                        `);
+                        $('#show-qr-btn').click(function() {
+                            window.location.href = "/whatsapp_qr";
+                        });
+                    }
+                }
+            },
+            error: function(err) {
+                console.error("Error fetching chats:", err);
+                showError("Network error. Please try again.");
+            }
+        });
+    }
+
+    // Show error message
+    function showError(message) {
+        $('#chat-list').html(`
+            <div class="alert alert-danger">
+                <i class="fa fa-exclamation-triangle"></i> ${message}
+                <button class="btn btn-sm btn-light float-right" onclick="loadChats()">
+                    <i class="fa fa-refresh"></i> Retry
+                </button>
+            </div>
+        `);
+    }
+
+    // Render chat list with pagination support
+    function renderChatList(chats, offset = 0, limit = 50) {
+        const $chatList = $('#chat-list');
+        
+        // Only clear if it's the first load (offset 0)
+        if (offset === 0) {
+            $chatList.empty();
+        }
+
+        chats.forEach(chat => {
+            const lastMessageTime = chat.last_message_time ? 
+                frappe.datetime.str_to_user(new Date(chat.last_message_time * 1000).toISOString()) : '';
+            
+            const lastMessageText = chat.last_message ? 
+                (chat.last_message.length > 30 ? 
+                 chat.last_message.substring(0, 30) + '...' : 
+                 chat.last_message) : 'No messages';
+            
+            $chatList.append(`
+                <div class="chat-item p-3 border-bottom" data-chat-id="${chat.id}" 
+                     style="cursor: pointer; ${chat.unread_count > 0 ? 'background-color: #f0f7ff;' : ''}">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>${chat.name}</strong>
+                            ${chat.is_group ? '<small class="badge badge-secondary ml-2">Group</small>' : ''}
+                        </div>
+                        <small class="text-muted">${lastMessageTime}</small>
+                    </div>
+                    <div class="d-flex justify-content-between mt-1">
+                        <small class="text-truncate" style="max-width: 70%;">
+                            ${lastMessageText}
+                        </small>
+                        ${chat.unread_count > 0 ? 
+                          `<span class="badge badge-primary">${chat.unread_count}</span>` : ''}
+                    </div>
+                </div>
+            `);
+        });
+        
+        // Add click handler for new chat items only
+        $('.chat-item').not('.has-listener').addClass('has-listener').click(function() {
+            const chatId = $(this).data('chat-id');
+            loadChat(chatId);
+        });
+    }
+    
+    // Load a specific chat
+    function loadChat(chatId) {
+        if (!chatId) return;
+        
+        currentChat = chatId;
+        
+        // Show loading state
+        $('#message-history').html(`
+            <div class="text-center p-4">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="sr-only">Loading...</span>
+                </div>
+                <p class="mt-2">Loading messages...</p>
+            </div>
+        `);
+        
+        // Enable message input
+        $('#message-input-container').show();
+        $('#chat-actions').show();
+        
+        // Load chat info
+        frappe.call({
+            method: 'waapi.api.waapi.get_chat_info',
+            args: { chat_id: chatId },
+            callback: function(response) {
+                if (response.message.success) {
+                    $('#current-chat-name').text(response.message.chat.name || chatId);
+                } else {
+                    $('#current-chat-name').text(chatId);
+                    frappe.msgprint(__('Error loading chat info: ') + (response.message.message || ''));
+                }
+            }
+        });
+        
+        // Load messages
+        frappe.call({
+            method: 'waapi.api.waapi.get_chat_history',
+            args: { chat_id: chatId, limit: 50 },
+            callback: function(response) {
+                if (response.message.success) {
+                    renderMessages(response.message.messages);
+                } else {
+                    $('#message-history').html(`
+                        <div class="alert alert-danger">
+                            Error loading messages: ${response.message.message || 'Unknown error'}
+                            <button class="btn btn-sm btn-light float-right" onclick="loadChat('${chatId}')">
+                                <i class="fa fa-refresh"></i> Retry
+                            </button>
+                        </div>
+                    `);
+                }
+            }
+        });
+    }
+    
+    // Render messages with proper data handling
+    function renderMessages(messages) {
+        const $messageHistory = $('#message-history');
+        $messageHistory.empty();
+        
+        if (!messages || messages.length === 0) {
+            $messageHistory.html('<div class="text-center text-muted p-4">No messages in this chat</div>');
+            return;
+        }
+        
+        // Sort messages by timestamp just in case
+        messages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        
+        messages.forEach(msg => {
+            const isOutgoing = msg.from_me;
+            const body = msg.body || '';
+            const time = msg.timestamp ? 
+                frappe.datetime.str_to_user(new Date(msg.timestamp * 1000).toISOString()) : 'Now';
+            
+            $messageHistory.append(`
+                <div class="message ${isOutgoing ? 'outgoing' : 'incoming'} mb-3">
+                    <div class="message-content ${isOutgoing ? 'bg-primary text-white' : 'bg-white'} 
+                         p-2 rounded" style="max-width: 70%; display: inline-block;">
+                        ${body}
+                        ${msg.media_url ? `
+                        <div class="mt-2">
+                            ${msg.mimetype?.startsWith('image') ? 
+                              `<img src="${msg.media_url}" style="max-width: 100%; max-height: 200px; border-radius: 4px;">` : 
+                              `<a href="${msg.media_url}" target="_blank" class="btn btn-sm btn-secondary">
+                                <i class="fa fa-download"></i> Download Media
+                              </a>`}
+                        </div>` : ''}
+                        <div class="text-right mt-1">
+                            <small class="${isOutgoing ? 'text-white-50' : 'text-muted'}">
+                                ${time}
+                                ${isOutgoing ? 
+                                  `<i class="fa fa-check${msg.status === 'read' ? '-double' : ''} ml-1"></i>` : ''}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            `);
+        });
+        
+        // Scroll to bottom
+        $messageHistory.scrollTop($messageHistory[0].scrollHeight);
+    }
+
+    // Send message
+    $('#send-message').click(function() {
+        const messageText = $('#message-text').val().trim();
+        
+        if (!messageText && !selectedMedia) {
+            frappe.msgprint(__('Please enter a message or attach media'));
+            return;
+        }
+        
+        if (selectedMedia) {
+            // Send media message
+            frappe.call({
+                method: 'waapi.api.waapi.send_media_message',
+                args: {
+                    chat_id: currentChat,
+                    media_url: selectedMedia.url,
+                    media_base64: selectedMedia.base64,
+                    media_name: selectedMedia.name,
+                    media_caption: messageText,
+                    as_document: selectedMedia.asDocument
+                },
+                callback: function(response) {
+                    if (response.message.success) {
+                        $('#message-text').val('');
+                        clearMedia();
+                        loadChat(currentChat); // Refresh messages
+                    } else {
+                        frappe.msgprint(__('Error sending media: ') + response.message.message);
+                    }
+                }
+            });
+        } else {
+            // Send text message
+            frappe.call({
+                method: 'waapi.api.waapi.send_text_message',
+                args: {
+                    chat_id: currentChat,
+                    message: messageText
+                },
+                callback: function(response) {
+                    if (response.message.success) {
+                        $('#message-text').val('');
+                        loadChat(currentChat); // Refresh messages
+                    } else {
+                        frappe.msgprint(__('Error sending message: ') + response.message.message);
+                    }
+                }
+            });
+        }
+    });
+    
+    // Handle media attachment
+    $('#attach-media').click(function() {
+        $('#media-modal').modal('show');
+    });
+    
+    $('#attach-confirm').click(function() {
+        const activeTab = $('#media-tabs .nav-link.active').attr('id');
+        
+        if (activeTab === 'upload-tab') {
+            const fileInput = document.getElementById('file-input');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                frappe.msgprint(__('Please select a file'));
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                selectedMedia = {
+                    name: file.name,
+                    base64: e.target.result.split(',')[1],
+                    url: null,
+                    asDocument: $('#as-document').is(':checked')
+                };
+                
+                showMediaPreview(file.name, file.size);
+                $('#media-modal').modal('hide');
+            };
+            reader.readAsDataURL(file);
+        } else {
+            const url = $('#media-url').val().trim();
+            
+            if (!url) {
+                frappe.msgprint(__('Please enter a valid URL'));
+                return;
+            }
+            
+            selectedMedia = {
+                name: url.split('/').pop(),
+                base64: null,
+                url: url,
+                asDocument: false
+            };
+            
+            showMediaPreview(url, 'URL');
+            $('#media-modal').modal('hide');
+        }
+    });
+    
+    function showMediaPreview(name, size) {
+        $('#media-name').text(name);
+        $('#media-size').text(formatFileSize(size));
+        $('#media-preview').show();
+    }
+    
+    function clearMedia() {
+        selectedMedia = null;
+        $('#file-input').val('');
+        $('#media-url').val('');
+        $('#media-caption').val('');
+        $('#media-preview').hide();
+    }
+    
+    $('#remove-media').click(function() {
+        clearMedia();
+    });
+    
+    function formatFileSize(bytes) {
+        if (typeof bytes !== 'number') return bytes;
+        if (bytes < 1024) return bytes + ' bytes';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+    
+    // Initialize
+    loadChats();
+    $('#refresh-chats').click(function() {
+        loadChats();
+        if (currentChat) {
+            loadChat(currentChat);
+        }
+    });
+    
+    // Auto-resize textarea
+    $('#message-text').on('input', function() {
+        this.style.height = 'auto';
+        this.style.height = (this.scrollHeight) + 'px';
+    });
+});
+</script>
+
+<style>
+.whatsapp-container {
+    height: calc(100vh - 60px);
+}
+.chat-sidebar {
+    background-color: #f7f7f7;
+    height: 100%;
+    overflow-y: auto;
+}
+.chat-main {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+.chat-header {
+    background-color: #f0f2f5;
+}
+#message-history {
+    background-color: #e5ddd5;
+    background-image: url("https://web.whatsapp.com/img/bg-chat-tile-light_a4be8c74.png");
+    background-repeat: repeat;
+    flex-grow: 1;
+    overflow-y: auto;
+}
+.message {
+    clear: both;
+    margin-bottom: 10px;
+}
+.message.outgoing {
+    float: right;
+    margin-left: 20%;
+    text-align: right;
+}
+.message.incoming {
+    float: left;
+    margin-right: 20%;
+    text-align: left;
+}
+.message-content {
+    box-shadow: 0 1px 0.5px rgba(0,0,0,0.1);
+    word-break: break-word;
+    padding: 8px 12px;
+    border-radius: 7.5px;
+    position: relative;
+}
+.message.outgoing .message-content {
+    background-color: #d9fdd3;
+    border-top-right-radius: 0;
+}
+.message.incoming .message-content {
+    background-color: #ffffff;
+    border-top-left-radius: 0;
+}
+.empty-state {
+    padding-top: 30%;
+    color: #667781;
+    font-size: 14px;
+}
+.chat-item:hover {
+    background-color: #f5f5f5 !important;
+}
+#media-preview .card {
+    max-width: 300px;
+}
+</style>
+{% endblock %}
