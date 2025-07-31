@@ -8,7 +8,7 @@
                 <i class="fas fa-comment-alt"></i>
             </div>
             <h1>WhatsApp Messenger</h1>
-            <p class="subtitle">Send messages securely</p>
+            <p class="subtitle">Send text messages and media files separately</p>
         </div>
 
         <div class="messenger-content">
@@ -20,25 +20,45 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="message-text" class="form-label">Message</label>
-                    <textarea id="message-text" class="form-control" rows="4" placeholder="Type your message..."></textarea>
+                    <label for="message-text" class="form-label">Text Message (optional)</label>
+                    <textarea id="message-text" class="form-control" rows="4" placeholder="Type your text message..."></textarea>
+                    <small class="form-text">Sent as a separate message if provided</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="media-file" class="form-label">Media File (optional)</label>
+                    <input type="file" id="media-file" class="form-control" accept="image/jpeg,image/png,image/gif,video/mp4,video/3gp,video/mov,audio/mp3,audio/wav,audio/ogg,audio/m4a,application/pdf,.doc,.docx,.txt,.xlsx">
+                    <small class="form-text">Supported types: jpg, jpeg, png, gif, mp4, 3gp, mov, mp3, wav, ogg, m4a, pdf, doc, docx, txt, xlsx</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="media-caption" class="form-label">Media Caption (optional)</label>
+                    <input type="text" id="media-caption" class="form-control" placeholder="e.g., This is a test file">
+                    <small class="form-text">Sent with the media file if provided</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="media-name" class="form-label">Media Name (optional)</label>
+                    <input type="text" id="media-name" class="form-control" placeholder="e.g., test_file.jpg">
+                    <small class="form-text">Default: Original filename or 'media_file'</small>
                 </div>
 
                 <div class="form-group optional">
                     <label for="mentions" class="form-label">Mentions (optional)</label>
                     <input type="text" id="mentions" class="form-control" placeholder="e.g., 123456789@c.us,987654321@c.us">
-                    <small class="form-text">Comma-separated contact IDs for group chat mentions</small>
+                    <small class="form-text">Comma-separated contact IDs for group chat mentions (applies to text message)</small>
                 </div>
 
                 <div class="form-group optional">
                     <label for="reply-to-message-id" class="form-label">Reply to Message ID (optional)</label>
                     <input type="text" id="reply-to-message-id" class="form-control" placeholder="e.g., true_123456789@c.us_3EB0123456789ABCDEF">
+                    <small class="form-text">Applies to text message if provided</small>
                 </div>
 
                 <div class="form-group checkbox">
                     <label class="checkbox-label">
                         <input type="checkbox" id="preview-link" checked>
-                        Show link previews
+                        Show link previews (for text messages)
                     </label>
                 </div>
             </div>
@@ -55,7 +75,7 @@
             </button>
             <button id="send-btn" class="action-btn primary">
                 <i class="fas fa-paper-plane"></i>
-                <span>Send Message</span>
+                <span>Send</span>
             </button>
         </div>
     </div>
@@ -66,12 +86,23 @@ frappe.ready(function() {
     // Elements
     const chatIdInput = document.getElementById('chat-id');
     const messageInput = document.getElementById('message-text');
+    const mediaFileInput = document.getElementById('media-file');
+    const mediaCaptionInput = document.getElementById('media-caption');
+    const mediaNameInput = document.getElementById('media-name');
     const mentionsInput = document.getElementById('mentions');
     const replyToMessageIdInput = document.getElementById('reply-to-message-id');
     const previewLinkCheckbox = document.getElementById('preview-link');
     const sendBtn = document.getElementById('send-btn');
     const backBtn = document.getElementById('back-btn');
     const statusEl = document.getElementById('status-message');
+
+    // Supported file extensions
+    const supportedExtensions = [
+        'jpg', 'jpeg', 'png', 'gif',
+        'mp4', '3gp', 'mov',
+        'mp3', 'wav', 'ogg', 'm4a',
+        'pdf', 'doc', 'docx', 'txt', 'xlsx'
+    ];
 
     // Update status display
     function updateStatus(message, type = "info") { 
@@ -86,56 +117,149 @@ frappe.ready(function() {
         setTimeout(() => { statusEl.style.display = "none"; }, 5000);
     }
 
-    // Send message handler
-    sendBtn.addEventListener('click', function() {
+    // Validate file extension
+    function validateFile(file) {
+        if (!file) return true;
+        const fileExt = file.name.split('.').pop().toLowerCase();
+        return supportedExtensions.includes(fileExt);
+    }
+
+    // Validate file size (max 16MB for WhatsApp)
+    function validateFileSize(file) {
+        if (!file) return true;
+        return file.size <= 16 * 1024 * 1024; // 16MB
+    }
+
+    // Convert file to base64
+    function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]); // Remove data URL prefix
+            reader.onerror = error => reject(error);
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // Send handler
+    sendBtn.addEventListener('click', async function() {
         const chatId = chatIdInput.value.trim();
         const message = messageInput.value.trim();
+        const mediaFile = mediaFileInput.files[0];
+        const mediaCaption = mediaCaptionInput.value.trim();
+        const mediaName = mediaNameInput.value.trim();
         const mentions = mentionsInput.value.trim();
         const replyToMessageId = replyToMessageIdInput.value.trim();
         const previewLink = previewLinkCheckbox.checked;
 
-        if (!chatId || !message) {
-            updateStatus("Chat ID and message are required", "error");
+        // Validate inputs
+        if (!chatId) {
+            updateStatus("Chat ID is required", "error");
             return;
         }
 
-        // Validate chat_id format
         if (!chatId.match(/.*@(c\.us|g\.us|newsletter)$/)) {
             updateStatus("Invalid chat ID format. Must end with @c.us, @g.us, or @newsletter", "error");
             return;
         }
 
-        this.classList.add('loading');
-        updateStatus("Sending message...", "info");
+        if (!message && !mediaFile) {
+            updateStatus("Either a text message or a media file is required", "error");
+            return;
+        }
 
-        frappe.call({
-            method: 'waapi.api.waapi.send_whatsapp_message',
-            args: {
-                instance_id: "76432",
-                chat_id: chatId,
-                message: message,
-                mentions: mentions ? mentions.split(',').map(m => m.trim()) : null,
-                reply_to_message_id: replyToMessageId || null,
-                preview_link: previewLink
-            },
-            callback: function(response) {
-                sendBtn.classList.remove('loading');
-                if (response.message.success) {
-                    updateStatus("Message sent successfully", "success");
-                    // Clear form
-                    messageInput.value = '';
-                    mentionsInput.value = '';
-                    replyToMessageIdInput.value = '';
+        if (mediaFile && !validateFile(mediaFile)) {
+            updateStatus(`Unsupported file type. Supported types: ${supportedExtensions.join(', ')}`, "error");
+            return;
+        }
+
+        if (mediaFile && !validateFileSize(mediaFile)) {
+            updateStatus("File size exceeds 16MB limit", "error");
+            return;
+        }
+
+        this.classList.add('loading');
+        updateStatus("Sending...", "info");
+
+        try {
+            let successCount = 0;
+            let sentItems = [];
+
+            // Send text message if provided
+            if (message) {
+                const response = await fetch('/api/method/waapi.api.waapi.send_whatsapp_message', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-Frappe-CSRF-Token': frappe.csrf_token
+                    },
+                    body: JSON.stringify({
+                        instance_id: "76432",
+                        chat_id: chatId,
+                        message: message,
+                        mentions: mentions ? mentions.split(',').map(m => m.trim()) : null,
+                        reply_to_message_id: replyToMessageId || null,
+                        preview_link: previewLink
+                    })
+                });
+                const result = await response.json();
+                if (result.message.success) {
+                    successCount++;
+                    sentItems.push("text message");
                 } else {
-                    updateStatus(response.message.message || "Failed to send message", "error");
+                    sendBtn.classList.remove('loading');
+                    updateStatus(result.message.message || "Failed to send text message", "error");
+                    return;
                 }
-            },
-            error: function(err) {
-                sendBtn.classList.remove('loading');
-                updateStatus("Failed to send message", "error");
-                console.error("Send Message Error:", err);
             }
-        });
+
+            // Send media file if provided
+            if (mediaFile) {
+                const base64Data = await fileToBase64(mediaFile);
+                const response = await fetch('/api/method/waapi.api.waapi.send_whatsapp_media', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-Frappe-CSRF-Token': frappe.csrf_token
+                    },
+                    body: JSON.stringify({
+                        instance_id: "76432",
+                        chat_id: chatId,
+                        media_base64: base64Data,
+                        media_caption: mediaCaption || "",
+                        media_name: mediaName || mediaFile.name
+                    })
+                });
+                const result = await response.json();
+                if (result.message.success) {
+                    successCount++;
+                    sentItems.push("media file");
+                } else {
+                    sendBtn.classList.remove('loading');
+                    updateStatus(result.message.message || "Failed to send media", "error");
+                    return;
+                }
+            }
+
+            sendBtn.classList.remove('loading');
+            if (successCount > 0) {
+                updateStatus(`Successfully sent ${sentItems.join(" and ")}`, "success");
+                // Clear form
+                messageInput.value = '';
+                mediaFileInput.value = '';
+                mediaCaptionInput.value = '';
+                mediaNameInput.value = '';
+                mentionsInput.value = '';
+                replyToMessageIdInput.value = '';
+            } else {
+                updateStatus("Nothing was sent", "error");
+            }
+        } catch (err) {
+            sendBtn.classList.remove('loading');
+            updateStatus("Error processing request", "error");
+            console.error("Request Error:", err);
+        }
     });
 
     // Back button handler
@@ -291,7 +415,7 @@ frappe.ready(function() {
     border-radius: 10px;
     font-size: 15px;
     line-height: 1.5;
-    color: #ebeef3; /* Dark gray for text, high contrast */
+    color: #1f2937; /* Dark gray for text, high contrast */
     background: #ffffff; /* White background for clarity */
     transition: all 0.2s ease;
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -318,6 +442,10 @@ frappe.ready(function() {
 textarea.form-control {
     resize: vertical;
     min-height: 120px; /* Slightly taller for better usability */
+}
+
+input[type="file"].form-control {
+    padding: 8px 16px; /* Adjusted padding for file input */
 }
 
 .form-text {
@@ -479,6 +607,10 @@ textarea.form-control {
     textarea.form-control {
         min-height: 100px;
     }
+
+    input[type="file"].form-control {
+        padding: 8px 14px;
+    }
 }
 
 /* Dark mode support */
@@ -499,7 +631,7 @@ textarea.form-control {
     }
 
     .form-control:focus {
-        background: #f6f8fa;
+        background: #4b5563;
         border-color: #25D366;
         box-shadow: 0 0 0 4px rgba(37, 211, 102, 0.15);
     }

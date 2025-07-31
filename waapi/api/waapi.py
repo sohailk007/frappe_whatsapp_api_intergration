@@ -3,6 +3,8 @@ import frappe
 from frappe import _
 from time import time
 from requests.exceptions import RequestException
+import os
+import base64
 
 BASE_URL = "https://waapi.app/api/v1"
 
@@ -244,82 +246,83 @@ def send_whatsapp_message(instance_id="76432", chat_id=None, message=None, menti
             "error": True,
             "detail": str(e)
         }
-    
+
+# Supported media types
+SUPPORTED_MEDIA_TYPES = {
+    'image': ['jpg', 'jpeg', 'png', 'gif'],
+    'video': ['mp4', '3gp', 'mov'],
+    'audio': ['mp3', 'wav', 'ogg', 'm4a'],
+    'document': ['pdf', 'doc', 'docx', 'txt', 'xlsx']
+}
+
 @frappe.whitelist()
-def send_whatsapp_media(instance_id="76432", chat_id=None, media_url=None, media_base64=None, media_name=None, media_caption=None, reply_to_message_id=None, preview_link=True, as_sticker=False, as_voice=False, as_document=False):
-    """Send a WhatsApp media message (image, video, audio, document) to a specified chat"""
+def send_whatsapp_media(instance_id="76432", chat_id=None, file_path=None, media_url=None, media_base64=None, media_caption=None, media_name=None):
+    """Send a WhatsApp media message to a specified chat"""
     try:
         if not chat_id:
             frappe.throw(_("Chat ID is required"))
-        if not (media_url or media_base64):
-            frappe.throw(_("Either media URL or Base64 content is required"))
-        if media_base64 and not media_name:
-            frappe.throw(_("Media name is required when sending Base64 content"))
 
         if not (chat_id.endswith('@c.us') or chat_id.endswith('@g.us') or chat_id.endswith('@newsletter')):
             frappe.throw(_("Invalid chat ID format. Must end with @c.us, @g.us, or @newsletter"))
 
-        # Validate supported media types for Base64
-        if media_base64:
-            ext = media_name.split('.')[-1].lower()
-            supported_extensions = {
-                'image': ['jpg', 'jpeg', 'png', 'gif'],
-                'video': ['mp4', '3gp', 'mov'],
-                'audio': ['mp3', 'wav', 'ogg', 'm4a'],
-                'document': ['pdf', 'doc', 'docx', 'txt', 'xlsx', 'xls', 'ppt', 'pptx']
-            }
-            media_type = None
-            for type_, exts in supported_extensions.items():
-                if ext in exts:
-                    media_type = type_
-                    break
-            if not media_type:
-                frappe.throw(_("Unsupported file extension for Base64 media"))
+        if not file_path and not media_url and not media_base64:
+            frappe.throw(_("Either file path, media URL, or media base64 is required"))
 
+        # Validate file extension if file_path is provided
+        if file_path:
+            file_ext = os.path.splitext(file_path)[1].lower().lstrip('.')
+            valid_extension = False
+            for media_type, extensions in SUPPORTED_MEDIA_TYPES.items():
+                if file_ext in extensions:
+                    valid_extension = True
+                    break
+            if not valid_extension:
+                frappe.throw(_(f"Unsupported file type. Supported types: {', '.join(sum(SUPPORTED_MEDIA_TYPES.values(), []))}"))
+
+        # Prepare payload
         url = f"{BASE_URL}/instances/{instance_id}/client/action/send-media"
         payload = {
             "chatId": chat_id,
-            "previewLink": preview_link,
-            "asSticker": as_sticker,
-            "asVoice": as_voice,
-            "asDocument": as_document
+            "mediaCaption": media_caption or "",
+            "mediaName": media_name or (os.path.basename(file_path) if file_path else "media_file")
         }
 
-        if media_url:
+        # Handle file upload (base64) or media URL
+        if file_path:
+            try:
+                with open(file_path, "rb") as file:
+                    media_data = base64.b64encode(file.read()).decode('utf-8')
+                payload["mediaBase64"] = media_data
+            except Exception as e:
+                frappe.throw(_(f"Error reading file: {str(e)}"))
+        elif media_url:
             payload["mediaUrl"] = media_url
-        if media_base64:
+        elif media_base64:
             payload["mediaBase64"] = media_base64
-        if media_name:
-            payload["mediaName"] = media_name
-        if media_caption:
-            payload["mediaCaption"] = media_caption
-        if reply_to_message_id:
-            payload["replyToMessageId"] = reply_to_message_id
 
-        response = requests.post(url, json=payload, headers=get_headers(), timeout=15)
+        response = requests.post(url, json=payload, headers=get_headers(), timeout=30)
         response.raise_for_status()
         data = response.json()
 
         if data.get("status") == "success":
             return {
                 "success": True,
-                "message": "Media message sent successfully",
+                "message": "Media sent successfully",
                 "data": {
-                    "message_id": data["data"]["_data"]["id"]["_serialized"],
-                    "type": data["data"]["_data"]["type"],
-                    "from": data["data"]["_data"]["from"],
-                    "to": data["data"]["_data"]["to"],
-                    "timestamp": data["data"]["_data"]["t"],
-                    "has_media": data["data"]["_data"]["hasMedia"],
-                    "media_key": data["data"]["_data"].get("mediaKey"),
-                    "mimetype": data["data"]["_data"].get("mimetype")
+                    "message_id": data["data"]["id"]["_serialized"],
+                    "body": data["data"]["body"],
+                    "from": data["data"]["from"],
+                    "to": data["data"]["to"],
+                    "timestamp": data["data"]["timestamp"],
+                    "media_type": data["data"]["type"],
+                    "media_key": data["data"]["mediaKey"]
                 }
             }
         else:
             frappe.log_error(f"WAAPI Media Sending Failed: {data.get('message', 'Unknown error')}", "WAAPI Media Sending Error")
             return {
                 "success": False,
-                "message": data.get("message", "Failed to send media message"),
+                "message": data.get("message", "Failed to send media"),
                 "error": True
             }
 
@@ -335,8 +338,7 @@ def send_whatsapp_media(instance_id="76432", chat_id=None, media_url=None, media
         frappe.log_error(f"WAAPI Media Processing Error: {str(e)}", "WAAPI Media Processing Error")
         return {
             "success": False,
-            "message": "Error processing media message",
+            "message": "Error processing media",
             "error": True,
             "detail": str(e)
         }
-    

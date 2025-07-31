@@ -4,7 +4,6 @@
 <div class="whatsapp-user-wrapper">
     <div class="whatsapp-user-card">
         {% if user_data %}
-        <!-- Success State -->
         <div class="user-header">
             <div class="status-indicator success">
                 <i class="fas fa-check-circle"></i>
@@ -71,7 +70,6 @@
         </div>
         
         {% else %}
-        <!-- Error State -->
         <div class="user-header error">
             <div class="status-indicator error">
                 <i class="fas fa-exclamation-triangle"></i>
@@ -707,3 +705,4 @@ frappe.ready(function() {
 
 </style>
 {% endblock %}
+
