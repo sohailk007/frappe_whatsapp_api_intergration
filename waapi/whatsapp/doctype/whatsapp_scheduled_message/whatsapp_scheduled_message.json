@@ -1,0 +1,122 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-08-02 11:13:03.602884",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "instance_id",
+  "chat_id",
+  "media_caption",
+  "media_name",
+  "mentions",
+  "reply_to_message_id",
+  "preview_link",
+  "schedule_time",
+  "status",
+  "response",
+  "column_break_esfz",
+  "message",
+  "media_file"
+ ],
+ "fields": [
+  {
+   "default": "76432",
+   "fieldname": "instance_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "instance_id",
+   "reqd": 1
+  },
+  {
+   "fieldname": "chat_id",
+   "fieldtype": "Data",
+   "label": "chat_id",
+   "reqd": 1
+  },
+  {
+   "fieldname": "message",
+   "fieldtype": "Text",
+   "label": "message"
+  },
+  {
+   "fieldname": "media_file",
+   "fieldtype": "Attach",
+   "label": "media_file"
+  },
+  {
+   "fieldname": "media_caption",
+   "fieldtype": "Data",
+   "label": "media_caption"
+  },
+  {
+   "fieldname": "media_name",
+   "fieldtype": "Data",
+   "label": "media_name"
+  },
+  {
+   "fieldname": "mentions",
+   "fieldtype": "Data",
+   "label": "mentions"
+  },
+  {
+   "fieldname": "reply_to_message_id",
+   "fieldtype": "Data",
+   "label": "reply_to_message_id"
+  },
+  {
+   "default": "1",
+   "fieldname": "preview_link",
+   "fieldtype": "Check",
+   "label": "preview_link"
+  },
+  {
+   "fieldname": "column_break_esfz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "schedule_time",
+   "fieldtype": "Datetime",
+   "label": "schedule_time",
+   "reqd": 1
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "status",
+   "options": "Pending\nProcessing\nSent\nFailed"
+  },
+  {
+   "fieldname": "response",
+   "fieldtype": "Long Text",
+   "label": "response"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2025-08-05 12:55:10.709341",
+ "modified_by": "Administrator",
+ "module": "WhatsApp",
+ "name": "WhatsApp Scheduled Message",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

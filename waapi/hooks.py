@@ -243,6 +243,15 @@ app_license = "mit"
 # }
 
 
+website_route_rules = [
+    {"from_route": "/waapi.api.waapi.<method>", "to_route": "waapi.api.waapi.<method>"}
+]
 
-
+scheduler_events = {
+    "cron": {
+        "*/5 * * * *": [
+            "waapi.api.waapi.process_scheduled_messages"
+        ]
+    }
+}
 
